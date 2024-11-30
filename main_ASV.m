@@ -1,5 +1,5 @@
 clear all;
-close all;
+%close all;
 clc;
 %rng('default');
 % format short
@@ -45,12 +45,65 @@ Ku=0.75*1;
 Kv=0.75*10;
 Kr=0.075*1;
 
-%%
+%% observer 
+load('WfVfall.mat') 
+load('WgVgall.mat') 
+Vf=Vf;
+Wf=Wf;
+
+Vg=1*Vg;
+Wg=Wg;
+v_obserf(:,:,1)=Vf;
+W_obserf(:,:,1)=Wf;
+v_obserf(:,:,2)=v_obserf(:,:,1);
+W_obserf(:,:,2)=W_obserf(:,:,1);
+alphao=0.0001;
+betao=0.0001;
+
+v_obserg(:,:,1)=Vg;
+W_obserg(:,:,1)=Wg;
+v_obserg(:,:,2)=v_obserg(:,:,1);
+W_obserg(:,:,2)=W_obserg(:,:,1);
 
 for k = 2:NF
    
     [eta(:,k+1),nV(:,k+1),eta_d(:,k),utilde,vtilde,nV_star(:,k),f] = USV_MODEL(eta(:,k),nV(:,k),tau(:,k),k);
     
+%% observer
+A= -3*eye(3);
+C = eye(3);
+observer_poles = 5*[-7, -3, -5];
+L = place(A', C', observer_poles)';
+Xfhat = [xhat(:,k);1];
+Fnhat = Wf'*Actor_NL_gamma_bah(Xfhat,Vf,Neuron_Num_f);
+% Fnnhat=(Fnhat+A*xhat(:,k)-xhat(:,k))/T;
+f_x_hat=Fnhat(1);
+f_y_hat=Fnhat(2);
+f_psi_hat=Fnhat(3);
+f_hat= [f_x_hat,f_y_hat,f_psi_hat]'/T;
+
+Gnhat = Wg'*Actor_NL_gamma_bah(Xfhat,Vg,Neuron_Num_g);
+Gnnhat=reshape(Gnhat,3,2);
+% G = T*[1/m11 0;0 0;0 a_psi/m33];
+% Gnnhat=G;
+Xf = [nV(1,k);nV(2,k);nV(3,k);1];
+y = C*Xf(1:end-1);
+yhat= C*xhat(:,k);
+ytilde = y-yhat;
+xhat(:,k+1) = xhat(:,k)+ (T*A*xhat(:,k)+Fnhat+Gnnhat*tau(:,k)+ T*L*(y-yhat));
+
+%% observer update law
+temp = Actor_NL_gamma_bah(Xfhat,Vf,Neuron_Num_f)/(Actor_NL_gamma_bah(Xfhat,Vf,Neuron_Num_f)'*Actor_NL_gamma_bah(Xfhat,Vf,Neuron_Num_f)+1);
+l=[0.1 0.2 0.3];
+W_obserf(:,:,k+1) = (1-alphao)*W_obserf(:,:,k)+betao*temp*ytilde'*l';
+Wf=W_obserf(:,:,k+1);
+%%%%%%%%%%%%%%
+temp = Actor_NL_gamma_bah(Xfhat,Vg,Neuron_Num_g)/(Actor_NL_gamma_bah(Xfhat,Vg,Neuron_Num_g)'*Actor_NL_gamma_bah(Xfhat,Vg,Neuron_Num_g)+1);
+l=0.0001*eye(3);
+
+W_obserg(:,:,k+1) = (1-alphao)*W_obserg(:,:,k)+.0000001*betao*[[temp*tau(1,k)*ytilde'*l']';[temp*tau(2,k)*ytilde'*l']']';
+% Wg=W_obserg(:,:,k+1);
+
 
 %%%%%%%%%%%%%%%%%
 %% Dynamic control
@@ -63,7 +116,9 @@ ucd=nV_stard(1);vcd=nV_stard(2);
 utilde = (u-uc);
 vtilde = (v-vc);
 
-f_x=f(1);f_y=f(2);f_psi=f(3);
+% f_x=f(1);f_y=f(2);f_psi=f(3);
+f_x=f_hat(1);f_y=f_hat(2);f_psi=f_hat(3);
+
 rcd=a_psi/ay*(-Kv*vtilde-f_y+vcd)+f_psi;
 rc = rc + T *rcd;
 nV_star(3,k)=rc;
@@ -113,6 +168,8 @@ subplot 334; plot(nV(1,:),'b','LineWidth',2);
 grid on;box on;
 hold on
 plot(nV_star(1,:),'--r','LineWidth',2);
+hold on
+plot(xhat(1,:),'.-g','LineWidth',2);
 ylabel('u ,uc','FontWeight','b','FontSize',12);
 xlabel('Iteration','FontWeight','b','FontSize',12);
 % title('x2 and r2 ','FontWeight','b','FontSize',12);
@@ -123,6 +180,8 @@ subplot 335; plot(nV(2,:),'b','LineWidth',2);
 grid on;box on;
 hold on
 plot(nV_star(2,:),'--r','LineWidth',2);
+hold on
+plot(xhat(2,:),'.-g','LineWidth',2);
 ylabel('v,vc','FontWeight','b','FontSize',12);
 xlabel('Iteration','FontWeight','b','FontSize',12);
 % title('x2 and r2 ','FontWeight','b','FontSize',12);
@@ -133,6 +192,8 @@ subplot 336; plot(nV(3,:),'b','LineWidth',2);
 grid on;box on;
 hold on
 plot(nV_star(3,:),'--r','LineWidth',2);
+hold on
+plot(xhat(3,:),'.-g','LineWidth',2);
 ylabel('r,rc','FontWeight','b','FontSize',12);
 xlabel('Iteration','FontWeight','b','FontSize',12);
 % title('x2 and r2 ','FontWeight','b','FontSize',12);
